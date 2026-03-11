@@ -1,7 +1,7 @@
 package br.com.coderbank.financialtransferportal.dto.response;
 
 import java.math.BigDecimal;
-import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.util.UUID;
 
 public record AccountResponseDto(
@@ -9,6 +9,6 @@ public record AccountResponseDto(
         String agencyNumber,
         String accountNumber,
         BigDecimal balance,
-        LocalDate creationDate
+        OffsetDateTime creationDate
 ) {
 }
