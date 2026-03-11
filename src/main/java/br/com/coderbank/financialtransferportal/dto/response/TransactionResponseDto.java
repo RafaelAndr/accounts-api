@@ -8,7 +8,7 @@ import java.time.LocalDate;
 import java.util.UUID;
 
 public record TransactionResponseDto(
-        UUID transactionId,
+        UUID id,
         TransactionType type,
         BigDecimal amount,
         LocalDate dateTime,
