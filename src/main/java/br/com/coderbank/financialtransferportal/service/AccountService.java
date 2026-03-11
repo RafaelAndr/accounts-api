@@ -7,6 +7,7 @@ import br.com.coderbank.financialtransferportal.mapper.AccountMapper;
 import br.com.coderbank.financialtransferportal.repository.AccountRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.Optional;
@@ -55,5 +56,37 @@ public class AccountService {
         } while (repository.existsByAccountNumber(accountNumber));
 
         return accountNumber;
+    }
+
+    @Transactional
+    public void deposit(BigDecimal amount, UUID accoundId){
+        Account account = repository
+                .findById(accoundId)
+                .orElseThrow(() -> new RuntimeException("Account not found"));
+
+        account.setBalance(account.getBalance().add(amount));
+    }
+
+    @Transactional
+    public void withdraw(BigDecimal amount, UUID accoundId){
+        Account account = repository
+                .findById(accoundId)
+                .orElseThrow(() -> new RuntimeException("Account not found"));
+
+        account.setBalance(account.getBalance().subtract(amount));
+    }
+
+    @Transactional
+    public void transfer(BigDecimal amount, UUID sourceAccountId, UUID destinationAccountId){
+        Account sourceAccount = repository
+                .findById(sourceAccountId)
+                .orElseThrow(() -> new RuntimeException("Account not found"));
+
+        Account destinationAccount = repository
+                .findById(destinationAccountId)
+                .orElseThrow(() -> new RuntimeException("Account not found"));
+
+        sourceAccount.setBalance(sourceAccount.getBalance().subtract(amount));
+        destinationAccount.setBalance(destinationAccount.getBalance().add(amount));
     }
 }
