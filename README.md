@@ -1,234 +1,165 @@
-# 🏦 Sistema Bancário com Microsserviços
+## 🛡️ Resiliência e Tolerância a Falhas
 
-## 📖 Sobre o Projeto
+O projeto implementa mecanismos de resiliência utilizando **Resilience4j**, através dos padrões:
 
-Este projeto foi desenvolvido utilizando arquitetura de microsserviços com o objetivo de simular operações básicas de um sistema bancário.
+* Circuit Breaker
+* Retry
+* Scheduler para reprocessamento
 
-A aplicação é composta por dois microsserviços independentes:
-
-- **Customer Service**: responsável pelo gerenciamento de clientes.
-- **Bank Account Service**: responsável pelo gerenciamento de contas bancárias.
-
-Os serviços se comunicam através de requisições HTTP utilizando **Spring Cloud OpenFeign**, permitindo a validação e consulta de informações entre os microsserviços.
+Esses mecanismos garantem maior disponibilidade do sistema e evitam a perda de informações quando um microsserviço está temporariamente indisponível.
 
 ---
 
-## 🏗️ Arquitetura
+## 🔄 Fluxo de Criação de Cliente e Conta
+
+Quando um novo cliente é cadastrado no **Customer Service**, o sistema realiza automaticamente uma chamada ao **Bank Account Service** para criar sua conta bancária padrão.
 
 ```text
-┌───────────────────┐
-│   Customer API    │
-└─────────┬─────────┘
+Customer Service
+       │
+       ▼
+Bank Account Service
+```
+
+---
+
+### Cenário Normal
+
+```text
+1. Cliente é cadastrado
+2. Customer Service chama o Bank Account Service
+3. Conta bancária é criada
+4. Operação finalizada com sucesso
+```
+
+```text
+┌──────────────────┐
+│ Customer Service │
+└─────────┬────────┘
           │
-          │ HTTP / OpenFeign
+          ▼
+┌──────────────────┐
+│ Bank Account API │
+└──────────────────┘
+```
+
+---
+
+### Cenário de Falha
+
+Caso o **Bank Account Service** esteja indisponível:
+
+```text
+1. Cliente é cadastrado
+2. Chamada para o serviço de contas falha
+3. Retry é executado automaticamente
+4. Circuit Breaker protege o sistema
+5. Dados da conta são armazenados como pendentes
+6. Cliente continua sendo criado normalmente
+```
+
+```text
+┌──────────────────┐
+│ Customer Service │
+└─────────┬────────┘
           │
-┌─────────▼─────────┐
-│ Bank Account API  │
-└───────────────────┘
+          ▼
+       Falha
+          │
+          ▼
+  Conta Pendente
+          │
+          ▼
+ Banco de Pendências
 ```
 
 ---
 
-## 🚀 Tecnologias Utilizadas
+## 🔁 Retry
 
-- Java 21
-- Spring Boot
-- Spring Web
-- Spring Data JPA
-- Spring Cloud OpenFeign
-- Hibernate
-- PostgreSQL
-- Maven
-- Lombok
+Antes de considerar a operação indisponível, o sistema realiza novas tentativas automáticas de comunicação com o microsserviço de contas.
+
+Objetivos:
+
+* Tratar falhas temporárias
+* Reduzir erros transitórios
+* Aumentar a taxa de sucesso das integrações
 
 ---
 
-## 📂 Estrutura do Projeto
+## ⚡ Circuit Breaker
+
+O Circuit Breaker monitora as chamadas ao microsserviço de contas.
+
+Quando uma quantidade configurada de falhas é atingida:
 
 ```text
-bank-system
-│
-├── customer-service
-│   ├── controller
-│   ├── service
-│   ├── repository
-│   ├── entity
-│   └── dto
-│
-├── bank-account-service
-│   ├── controller
-│   ├── service
-│   ├── repository
-│   ├── clients
-│   ├── entity
-│   └── dto
-│
-└── README.md
+CLOSED
+   │
+   ▼
+Falhas consecutivas
+   │
+   ▼
+OPEN
+   │
+   ▼
+Bloqueia novas chamadas
 ```
 
----
-
-## ⚙️ Funcionalidades
-
-### 👤 Customer Service
-
-- Criar cliente
-- Buscar cliente por ID
-- Listar clientes
-- Atualizar cliente
-- Remover cliente
-
-### 💳 Bank Account Service
-
-- Criar conta bancária
-- Buscar conta por ID
-- Listar contas
-- Atualizar conta
-- Remover conta
-- Associar conta a um cliente existente
-- Validar cliente antes da criação da conta
-
----
-
-## 🔗 Comunicação Entre Serviços
-
-O microsserviço de contas bancárias utiliza OpenFeign para consultar informações dos clientes.
-
-Exemplo:
-
-```java
-@FeignClient(
-    name = "customers",
-    url = "${clients.customers.url}"
-)
-public interface CustomerClient {
-
-    @GetMapping("/{id}")
-    ResponseEntity<CustomerResponse> getCustomer(
-        @PathVariable Long id
-    );
-}
-```
-
-Antes de criar uma conta, o sistema realiza uma consulta ao microsserviço de clientes para validar a existência do cliente informado.
-
----
-
-## 🗄️ Modelo de Dados
-
-### Customer
+Após um período de espera:
 
 ```text
-Customer
-├── id
-├── name
-├── email
-└── cpf
+OPEN
+   │
+   ▼
+HALF_OPEN
+   │
+   ▼
+Teste de recuperação
 ```
 
-### Bank Account
+Caso o serviço volte a responder:
 
 ```text
-BankAccount
-├── id
-├── agency
-├── accountNumber
-├── balance
-└── customerId
+HALF_OPEN
+   │
+   ▼
+CLOSED
 ```
 
 ---
 
-## ▶️ Como Executar
+## ⏰ Reprocessamento Automático
 
-### 1. Clonar o Repositório
+Para evitar perda de dados, as contas que não puderam ser criadas são armazenadas em uma tabela de pendências.
 
-```bash
-git clone https://github.com/seu-usuario/bank-system.git
+```text
+Pending Accounts
+├── customerId
+├── accountType
+├── createdAt
+└── status
 ```
 
-### 2. Configurar o PostgreSQL
+Um Scheduler executa periodicamente a tentativa de criação dessas contas.
 
-Criar os bancos de dados:
+Fluxo:
 
-```sql
-CREATE DATABASE customers_db;
-CREATE DATABASE accounts_db;
+```text
+Scheduler
+    │
+    ▼
+Busca contas pendentes
+    │
+    ▼
+Tenta criar novamente
+    │
+ ┌──┴──┐
+ ▼     ▼
+Sucesso Falha
+ │       │
+ ▼       ▼
+Remove Mantém pendente
 ```
 
-### 3. Configurar as Credenciais
-
-No arquivo `application.yml` de cada microsserviço:
-
-```yaml
-spring:
-  datasource:
-    url: jdbc:postgresql://localhost:5432/customers_db
-    username: postgres
-    password: postgres
-```
-
----
-
-### 4. Executar os Microsserviços
-
-Primeiro execute o Customer Service:
-
-```bash
-cd customer-service
-mvn spring-boot:run
-```
-
-Depois execute o Bank Account Service:
-
-```bash
-cd bank-account-service
-mvn spring-boot:run
-```
-
----
-
-## 📌 Endpoints
-
-### Customer Service
-
-| Método | Endpoint |
-|----------|----------|
-| POST | /customers |
-| GET | /customers |
-| GET | /customers/{id} |
-| PUT | /customers/{id} |
-| DELETE | /customers/{id} |
-
-### Bank Account Service
-
-| Método | Endpoint |
-|----------|----------|
-| POST | /accounts |
-| GET | /accounts |
-| GET | /accounts/{id} |
-| PUT | /accounts/{id} |
-| DELETE | /accounts/{id} |
-
----
-
-## 🎯 Objetivos de Aprendizado
-
-Este projeto foi desenvolvido para praticar:
-
-- Arquitetura de Microsserviços
-- Comunicação entre serviços com OpenFeign
-- Desenvolvimento de APIs REST
-- Persistência de dados com JPA/Hibernate
-- Integração com PostgreSQL
-- Tratamento de exceções
-- Organização em camadas
-- Boas práticas de desenvolvimento backend
-
----
-
-## 👨‍💻 Autor
-
-**Rafael Nascimento Andrade**
-
-Graduado em Ciência da Computação e desenvolvedor Back-end com foco em Java e ecossistema Spring.
+Essa estratégia garante consistência eventual entre os microsserviços mesmo em cenários de indisponibilidade temporária.
